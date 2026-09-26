@@ -4,6 +4,8 @@ A Spring Boot backend that demonstrates **offline UPI payments routed through a 
 
 This repo is the **server side** of that system, plus a software simulator of the mesh so you can demo the whole flow on a single laptop without any real Bluetooth hardware.
 
+> This project started from [`perryvegehan/UPI_Without_Internet`](https://github.com/perryvegehan/UPI_Without_Internet), a public teaching demo. It's been substantially rewritten and extended here (PostgreSQL + Flyway persistence, and more to come per the roadmap) as a standalone project — not a fork.
+
 ---
 
 ## Table of Contents
@@ -38,7 +40,25 @@ You'll see all three in the dashboard.
 ### Prerequisites
 
 - **JDK 17 or newer** installed and on PATH (or `JAVA_HOME` set). Check with `java -version`.
-- That's it. No database, no Redis, no Maven (the wrapper handles it). Just Java.
+- **A running PostgreSQL instance.** No Redis needed yet, and Maven itself is handled by the wrapper.
+
+### Set up the database
+
+Create an empty database — the app creates its own tables via Flyway on startup, so nothing else to run:
+
+```sql
+CREATE DATABASE offlinepay;
+```
+
+By default the app connects to `localhost:5432/offlinepay` as `postgres`/`postgres`. Override any of it with environment variables if your setup differs:
+
+```bash
+export DB_HOST=localhost
+export DB_PORT=5432
+export DB_NAME=offlinepay
+export DB_USER=postgres
+export DB_PASSWORD=postgres
+```
 
 ### Run on Windows
 
@@ -252,7 +272,8 @@ upi-offline-mesh/
 ├── README.md                                this file
 └── src/main/
     ├── resources/
-    │   ├── application.properties           H2 in-memory DB, port 8080, TTLs
+    │   ├── application.properties           Postgres datasource, port 8080, TTLs
+    │   ├── db/migration/V1__init_schema.sql Flyway-managed schema (accounts, transactions)
     │   └── templates/dashboard.html         The interactive demo UI
     └── java/com/demo/upimesh/
         ├── UpiMeshApplication.java          Spring Boot main class
@@ -304,9 +325,6 @@ src/test/java/com/demo/upimesh/
 | POST | `/api/mesh/flush` | Bridges with internet upload to backend (parallel) |
 | POST | `/api/mesh/reset` | Clear mesh + idempotency cache |
 | POST | `/api/bridge/ingest` | **The production endpoint.** Real bridges POST here |
-| GET | `/h2-console` | Browse the in-memory database |
-
-H2 console login: JDBC URL `jdbc:h2:mem:upimesh`, username `sa`, no password.
 
 ### Request format for `/api/bridge/ingest`
 
@@ -357,15 +375,14 @@ This is a teaching demo. To make it production-grade you'd swap these things:
 
 | What's in the demo | What it would be in production |
 |---|---|
-| H2 in-memory DB | PostgreSQL / MySQL with replicas |
+| Single PostgreSQL instance | PostgreSQL with read replicas / managed HA (e.g. RDS Multi-AZ) |
 | `ConcurrentHashMap` for idempotency | Redis with `SET NX EX` |
 | RSA keypair regenerated on every startup | Private key in HSM (AWS KMS, HashiCorp Vault). Public key cached on devices. |
 | Server-side `DemoService.createPacket()` | Same code running on Android, in a Kotlin port |
 | Software-simulated mesh (`MeshSimulatorService`) | Real BLE GATT or Wi-Fi Direct between phones |
 | One settlement service that owns the ledger | Integration with NPCI / a real bank core |
 | No auth on `/api/bridge/ingest` | Mutual TLS or signed bridge-node certificates |
-| In-memory accounts seeded on startup | Real KYC'd users, real VPAs, real PIN verification against the bank |
-| H2 console exposed | Disabled |
+| Demo accounts seeded on startup | Real KYC'd users, real VPAs, real PIN verification against the bank |
 | No rate limiting | Per-bridge-node rate limit, per-sender velocity check |
 | Logs to console | Structured logs to a SIEM, alerts on `INVALID` spikes |
 
